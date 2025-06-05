@@ -6,6 +6,7 @@ import moment from 'moment';
 import { LineChart, BarChart } from 'react-native-svg-charts';
 import * as ss from 'simple-statistics';
 import { mean, median, std, mode } from 'mathjs';
+import { Svg, Rect, Line as SvgLine } from 'react-native-svg'; // Adicionado para BoxPlotSVG
 
 interface DataItem {
   humidity: string;
@@ -15,6 +16,60 @@ interface DataItem {
 }
 
 const API_URL = 'http://172.174.21.128:4000/data';
+
+// Função utilitária para calcular dados do boxplot
+function getBoxPlotStats(arr: number[]) {
+  if (!arr.length) return { min: 0, q1: 0, median: 0, q3: 0, max: 0 };
+  const sorted = [...arr].sort((a, b) => a - b);
+  const q1 = ss.quantileSorted(sorted, 0.25);
+  const median = ss.quantileSorted(sorted, 0.5);
+  const q3 = ss.quantileSorted(sorted, 0.75);
+  return { min: sorted[0], q1, median, q3, max: sorted[sorted.length - 1] };
+}
+
+// Função para gerar bins do histograma
+function getHistogram(arr: number[], bins = 8) {
+  if (!arr.length) return [];
+  const min = Math.min(...arr);
+  const max = Math.max(...arr);
+  const step = (max - min) / bins || 1;
+  const hist = Array(bins).fill(0);
+  arr.forEach(v => {
+    let idx = Math.floor((v - min) / step);
+    if (idx === bins) idx = bins - 1;
+    hist[idx]++;
+  });
+  return hist;
+}
+
+// Componente para Boxplot SVG
+const BoxPlotSVG = ({ box, color, width, height }: { box: any, color: string, width: number, height: number }) => {
+  const { min, q1, median, q3, max } = box;
+  const range = max - min || 1;
+  const scale = (v: number) => ((v - min) / range) * (width - 20) + 10;
+  return (
+    <Svg width={width} height={height}>
+      {/* Linha do min ao max */}
+      <SvgLine x1={scale(min)} y1={height / 2} x2={scale(max)} y2={height / 2} stroke={color} strokeWidth={2} />
+      {/* Caixa Q1-Q3 */}
+      <Rect
+        x={scale(q1)}
+        y={height / 2 - 12}
+        width={scale(q3) - scale(q1)}
+        height={24}
+        fill={color}
+        opacity={0.2}
+        stroke={color}
+        strokeWidth={2}
+      />
+      {/* Linha mediana */}
+      <SvgLine x1={scale(median)} y1={height / 2 - 12} x2={scale(median)} y2={height / 2 + 12} stroke={color} strokeWidth={2} />
+      {/* Linhas min e max */}
+      <SvgLine x1={scale(min)} y1={height / 2 - 8} x2={scale(min)} y2={height / 2 + 8} stroke={color} strokeWidth={2} />
+      <SvgLine x1={scale(max)} y1={height / 2 - 8} x2={scale(max)} y2={height / 2 + 8} stroke={color} strokeWidth={2} />
+    </Svg>
+  );
+};
 
 const DashboardScreen = () => {
   const { background, card, text, accent } = useTheme();
@@ -41,13 +96,13 @@ const DashboardScreen = () => {
   const timeArr = bedroomData.map(d => moment.unix(d.timestamp_TTL).format('HH:mm'));
 
   // Estatísticas
-const tempStats = {
-  media: tempArr.length ? (mean(tempArr) as number) : 0,
-  mediana: tempArr.length ? (median(tempArr) as number) : 0,
-  moda: tempArr.length ? (mode(tempArr) as number[]) : [],
-  desvio: tempArr.length ? (std(tempArr) as unknown as number) : 0,
-  assimetria: tempArr.length > 2 ? (ss.sampleSkewness(tempArr) as number) : 0,
-};
+  const tempStats = {
+    media: tempArr.length ? (mean(tempArr) as number) : 0,
+    mediana: tempArr.length ? (median(tempArr) as number) : 0,
+    moda: tempArr.length ? (mode(tempArr) as number[]) : [],
+    desvio: tempArr.length ? (std(tempArr) as unknown as number) : 0,
+    assimetria: tempArr.length > 2 ? (ss.sampleSkewness(tempArr) as number) : 0,
+  };
 
   const humStats = {
     media: humArr.length ? mean(humArr) : 0,
@@ -69,6 +124,12 @@ const tempStats = {
   const tempNext = tempArr.length > 1 ? tempRegression.m * tempArr.length + tempRegression.b : 0;
   const humRegression = humArr.length > 1 ? ss.linearRegression(humArr.map((y, i) => [i, y])) : { m: 0, b: 0 };
   const humNext = humArr.length > 1 ? humRegression.m * humArr.length + humRegression.b : 0;
+
+  // Histogramas e Boxplots
+  const tempHist = getHistogram(tempArr);
+  const humHist = getHistogram(humArr);
+  const tempBox = getBoxPlotStats(tempArr);
+  const humBox = getBoxPlotStats(humArr);
 
   return (
     <ScrollView style={{ backgroundColor: background }} contentContainerStyle={{ padding: 16 }}>
@@ -104,7 +165,38 @@ const tempStats = {
         <Text style={{ color: text, fontSize: 13 }}>Temp próxima: {tempNext.toFixed(2)}°C | Umidade próxima: {humNext.toFixed(2)}%</Text>
         <Text style={{ color: text, fontSize: 13 }}>Modelo Temp: y = {tempRegression.m.toFixed(2)}x + {tempRegression.b.toFixed(2)}</Text>
         <Text style={{ color: text, fontSize: 13 }}>Modelo Umidade: y = {humRegression.m.toFixed(2)}x + {humRegression.b.toFixed(2)}</Text>
-        {/* Histogramas e Boxplots podem ser implementados aqui usando BarChart e custom SVG */}
+        
+        {/* Histogramas */}
+        <Text style={[styles.section, { color: text }]}>Histogramas</Text>
+        <Text style={{ color: text, fontSize: 13 }}>Temperatura</Text>
+        <BarChart
+          style={{ height: 80, marginBottom: 8 }}
+          data={tempHist}
+          svg={{ fill: '#FF5C5C' }}
+          spacingInner={0.2}
+          contentInset={{ top: 10, bottom: 10 }}
+        />
+        <Text style={{ color: text, fontSize: 13 }}>Umidade</Text>
+        <BarChart
+          style={{ height: 80, marginBottom: 8 }}
+          data={humHist}
+          svg={{ fill: '#5C9EFF' }}
+          spacingInner={0.2}
+          contentInset={{ top: 10, bottom: 10 }}
+        />
+
+        {/* Boxplots */}
+        <Text style={[styles.section, { color: text }]}>Boxplots</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 }}>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ color: text, fontSize: 13 }}>Temperatura</Text>
+            <BoxPlotSVG box={tempBox} color="#FF5C5C" width={80} height={60} />
+          </View>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ color: text, fontSize: 13 }}>Umidade</Text>
+            <BoxPlotSVG box={humBox} color="#5C9EFF" width={80} height={60} />
+          </View>
+        </View>
       </View>
     </ScrollView>
   );
