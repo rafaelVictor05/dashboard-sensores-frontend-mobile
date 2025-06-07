@@ -145,9 +145,13 @@ const DashboardScreen = () => {
 
   // Filtrar e converter dados
   const bedroomData = data.filter(d => d.location === 'Bedroom');
+  console.log('Bedroom Data:', bedroomData);
   const tempArr = bedroomData.map(d => Number(d.temperature));
+  console.log('Temperature Array:', tempArr);
   const humArr = bedroomData.map(d => Number(d.humidity));
+  console.log('Humidity Array:', humArr);
   const timeArr = bedroomData.map(d => moment.unix(d.timestamp_TTL).format('HH:mm'));
+  console.log('Time Array:', timeArr);
 
   // Obter valores mais recentes
   const latest = bedroomData.length ? bedroomData[bedroomData.length - 1] : null;
