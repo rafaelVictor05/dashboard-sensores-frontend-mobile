@@ -6,7 +6,7 @@ import moment from 'moment';
 import { LineChart, BarChart } from 'react-native-svg-charts';
 import * as ss from 'simple-statistics';
 import { mean, median, std, mode } from 'mathjs';
-import { Svg, Rect, Line as SvgLine } from 'react-native-svg'; // Adicionado para BoxPlotSVG
+import { Svg, Rect, Line as SvgLine } from 'react-native-svg'; 
 
 interface DataItem {
   humidity: string;
@@ -16,16 +16,6 @@ interface DataItem {
 }
 
 const API_URL = 'http://172.174.21.128:4000/data';
-
-// Função utilitária para calcular dados do boxplot
-function getBoxPlotStats(arr: number[]) {
-  if (!arr.length) return { min: 0, q1: 0, median: 0, q3: 0, max: 0 };
-  const sorted = [...arr].sort((a, b) => a - b);
-  const q1 = ss.quantileSorted(sorted, 0.25);
-  const median = ss.quantileSorted(sorted, 0.5);
-  const q3 = ss.quantileSorted(sorted, 0.75);
-  return { min: sorted[0], q1, median, q3, max: sorted[sorted.length - 1] };
-}
 
 // Função para gerar bins do histograma
 function getHistogram(arr: number[], bins = 8) {
@@ -41,35 +31,6 @@ function getHistogram(arr: number[], bins = 8) {
   });
   return hist;
 }
-
-// Componente para Boxplot SVG
-const BoxPlotSVG = ({ box, color, width, height }: { box: any, color: string, width: number, height: number }) => {
-  const { min, q1, median, q3, max } = box;
-  const range = max - min || 1;
-  const scale = (v: number) => ((v - min) / range) * (width - 20) + 10;
-  return (
-    <Svg width={width} height={height}>
-      {/* Linha do min ao max */}
-      <SvgLine x1={scale(min)} y1={height / 2} x2={scale(max)} y2={height / 2} stroke={color} strokeWidth={2} />
-      {/* Caixa Q1-Q3 */}
-      <Rect
-        x={scale(q1)}
-        y={height / 2 - 12}
-        width={scale(q3) - scale(q1)}
-        height={24}
-        fill={color}
-        opacity={0.2}
-        stroke={color}
-        strokeWidth={2}
-      />
-      {/* Linha mediana */}
-      <SvgLine x1={scale(median)} y1={height / 2 - 12} x2={scale(median)} y2={height / 2 + 12} stroke={color} strokeWidth={2} />
-      {/* Linhas min e max */}
-      <SvgLine x1={scale(min)} y1={height / 2 - 8} x2={scale(min)} y2={height / 2 + 8} stroke={color} strokeWidth={2} />
-      <SvgLine x1={scale(max)} y1={height / 2 - 8} x2={scale(max)} y2={height / 2 + 8} stroke={color} strokeWidth={2} />
-    </Svg>
-  );
-};
 
 // Componente QQ-Plot SVG
 const QQPlotSVG = ({ data, width, height, color }: { data: number[], width: number, height: number, color: string }) => {
@@ -115,16 +76,6 @@ const QQPlotSVG = ({ data, width, height, color }: { data: number[], width: numb
   );
 };
 
-// Função Shapiro-Wilk para teste de normalidade (aproximação)
-function shapiroWilkNormal(arr: number[]): {stat: number, p: number, normal: boolean} {
-  if (arr.length < 3) return {stat: 0, p: 0, normal: false};
-  if (arr.length > 5000) return {stat: 0, p: 0, normal: false};
-  const skew = ss.sampleSkewness(arr);
-  const kurt = ss.sampleKurtosis(arr);
-  const normal = Math.abs(skew) < 0.5 && Math.abs(kurt) < 1;
-  return {stat: 0, p: normal ? 0.1 : 0.01, normal};
-}
-
 const DashboardScreen = () => {
   const { background, card, text, accent } = useTheme();
   const [data, setData] = useState<DataItem[]>([]);
@@ -145,13 +96,9 @@ const DashboardScreen = () => {
 
   // Filtrar e converter dados
   const bedroomData = data.filter(d => d.location === 'Bedroom');
-  console.log('Bedroom Data:', bedroomData);
   const tempArr = bedroomData.map(d => Number(d.temperature));
-  console.log('Temperature Array:', tempArr);
   const humArr = bedroomData.map(d => Number(d.humidity));
-  console.log('Humidity Array:', humArr);
   const timeArr = bedroomData.map(d => moment.unix(d.timestamp_TTL).format('HH:mm'));
-  console.log('Time Array:', timeArr);
 
   // Obter valores mais recentes
   const latest = bedroomData.length ? bedroomData[bedroomData.length - 1] : null;
@@ -165,6 +112,8 @@ const DashboardScreen = () => {
     moda: tempArr.length ? (mode(tempArr) as number[]) : [],
     desvio: tempArr.length ? (std(tempArr) as unknown as number) : 0,
     assimetria: tempArr.length > 2 ? (ss.sampleSkewness(tempArr) as number) : 0,
+    min: tempArr.length ? Math.min(...tempArr) : 0,
+    max: tempArr.length ? Math.max(...tempArr) : 0,
   };
 
   const humStats = {
@@ -173,6 +122,8 @@ const DashboardScreen = () => {
     moda: humArr.length ? mode(humArr) : 0,
     desvio: tempArr.length ? (std(humArr) as unknown as number) : 0,
     assimetria: humArr.length > 2 ? ss.sampleSkewness(humArr) : 0,
+    min: humArr.length ? Math.min(...humArr) : 0,
+    max: humArr.length ? Math.max(...humArr) : 0,
   };
 
   // Percentuais
@@ -187,55 +138,9 @@ const DashboardScreen = () => {
     pctHumInRangeFixed = (count / humArr.length) * 100;
   }
 
-  // Probabilidade (aproximação)
-  // Teste de normalidade: Shapiro-Wilk (aproximação)
-  let normalTemp = false;
-  let probT30 = 0;
-  if (tempArr.length > 2) {
-    const shapiro = shapiroWilkNormal(tempArr);
-    normalTemp = shapiro.normal;
-    if (normalTemp) {
-      const mu = mean(tempArr) as number;
-      const sigma = (std(tempArr) as unknown) as number;
-      if (sigma > 0) {
-        const z = (30 - mu) / sigma;
-        probT30 = 1 - ss.cumulativeStdNormalProbability(z);
-      } else {
-        probT30 = mu > 30 ? 1 : 0;
-      }
-    } else {
-      probT30 = tempArr.filter(t => t > 30).length / tempArr.length;
-    }
-  } else if (tempArr.length > 0) {
-    probT30 = tempArr.filter(t => t > 30).length / tempArr.length;
-  }
-  // Probabilidade Umidade > 40% usando Shapiro-Wilk
-  let normalHum = false;
-  let probH40 = 0;
-  if (humArr.length > 2) {
-    const shapiro = shapiroWilkNormal(humArr);
-    normalHum = shapiro.normal;
-    if (normalHum) {
-      const mu = mean(humArr) as number;
-      const sigma = (std(humArr) as unknown) as number;
-      if (sigma > 0) {
-        const z = (40 - mu) / sigma;
-        probH40 = 1 - ss.cumulativeStdNormalProbability(z);
-      } else {
-        probH40 = mu > 40 ? 1 : 0;
-      }
-    } else {
-      probH40 = humArr.filter(h => h > 40).length / humArr.length;
-    }
-  } else if (humArr.length > 0) {
-    probH40 = humArr.filter(h => h > 40).length / humArr.length;
-  }
-
   // Regressão Linear
   const tempRegression = tempArr.length > 1 ? ss.linearRegression(tempArr.map((y, i) => [i, y])) : { m: 0, b: 0 };
-  const tempNext = tempArr.length > 1 ? tempRegression.m * tempArr.length + tempRegression.b : 0;
   const humRegression = humArr.length > 1 ? ss.linearRegression(humArr.map((y, i) => [i, y])) : { m: 0, b: 0 };
-  const humNext = humArr.length > 1 ? humRegression.m * humArr.length + humRegression.b : 0;
 
   // Previsão dos próximos 5 valores
   const tempForecast = tempArr.length > 1
@@ -245,28 +150,18 @@ const DashboardScreen = () => {
     ? Array.from({ length: 5 }, (_, k) => humRegression.m * (humArr.length + k) + humRegression.b)
     : [];
 
-  // Calcular intervalo médio entre medições
+  // Calcular intervalo de 10 minutos para previsões
   let futureTimes: string[] = [];
-  if (bedroomData.length > 1) {
-    // Calcular intervalo médio real entre todas as medições
-    const intervals = bedroomData.slice(1).map((d, i) => d.timestamp_TTL - bedroomData[i].timestamp_TTL);
-    const avgInterval = intervals.length ? Math.round(mean(intervals)) : 60;
+  if (bedroomData.length > 0) {
     const last = bedroomData[bedroomData.length - 1].timestamp_TTL;
     futureTimes = Array.from({ length: 5 }, (_, k) =>
-      moment.unix(last + avgInterval * (k + 1)).format('HH:mm')
-    );
-  } else if (bedroomData.length === 1) {
-    const last = bedroomData[0].timestamp_TTL;
-    futureTimes = Array.from({ length: 5 }, (_, k) =>
-      moment.unix(last + 60 * (k + 1)).format('HH:mm') // fallback: 1 min
+      moment.unix(last + 600 * (k + 1)).format('HH:mm') // 600 segundos = 10 minutos
     );
   }
 
   // Histogramas e Boxplots
   const tempHist = getHistogram(tempArr);
   const humHist = getHistogram(humArr);
-  const tempBox = getBoxPlotStats(tempArr);
-  const humBox = getBoxPlotStats(humArr);
 
   return (
     <ScrollView style={{ backgroundColor: background }} contentContainerStyle={{ padding: 16 }}>
@@ -286,8 +181,8 @@ const DashboardScreen = () => {
           </Text>
         </View>
       </View>
-      <View style={[styles.card, { backgroundColor: card }]}>  
-        {/* Gráfico de Linha Temperatura */}
+      {/* Gráfico de Linha Temperatura */}
+      <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
         <Text style={[styles.section, { color: text }]}>Gráfico de Linha - Temperatura</Text>
         <View style={{ height: 140, marginBottom: 8 }}>
           <LineChart
@@ -316,8 +211,9 @@ const DashboardScreen = () => {
             <Text key={i} style={{ color: text, fontSize: 10, flex: 1, textAlign: i === 0 ? 'left' : i === 2 ? 'right' : 'center' }}>{timeArr[idx]}</Text>
           ))}
         </View>
-
-        {/* Gráfico de Linha Umidade */}
+      </View>
+      {/* Gráfico de Linha Umidade */}
+      <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
         <Text style={[styles.section, { color: text }]}>Gráfico de Linha - Umidade</Text>
         <View style={{ height: 140, marginBottom: 8 }}>
           <LineChart
@@ -346,38 +242,133 @@ const DashboardScreen = () => {
             <Text key={i} style={{ color: text, fontSize: 10, flex: 1, textAlign: i === 0 ? 'left' : i === 2 ? 'right' : 'center' }}>{timeArr[idx]}</Text>
           ))}
         </View>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
-          <Text style={{ color: text, fontSize: 12 }}>Temperatura</Text>
-          <Text style={{ color: text, fontSize: 12 }}>Umidade</Text>
-        </View>
+      </View>
+      {/* Estatísticas Temperatura */}
+      <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
         <Text style={[styles.section, { color: text }]}>Estatísticas Temperatura</Text>
-        <Text style={{ color: text, fontSize: 13 }}>Média: {tempStats.media.toFixed(2)} | Mediana: {tempStats.mediana.toFixed(2)} | Moda: {tempStats.moda} | Desvio: {tempStats.desvio.toFixed(2)} | Assimetria: {tempStats.assimetria.toFixed(2)}</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+          {/* Coluna 1 */}
+          <View style={{ flex: 1 }}>
+            <View style={[styles.statCard, { backgroundColor: '#FFE5E5' }]}> 
+              <Text style={{ fontSize: 18 }}>🌡️</Text>
+              <Text style={{ color: '#B71C1C', fontSize: 13, marginTop: 2 }}>Média</Text>
+              <Text style={{ color: '#B71C1C', fontWeight: 'bold', fontSize: 16 }}>{tempStats.media.toFixed(2)}°C</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#FFE5E5' }]}> 
+              <Text style={{ fontSize: 18 }}>🔀</Text>
+              <Text style={{ color: '#B71C1C', fontSize: 13, marginTop: 2 }}>Mediana</Text>
+              <Text style={{ color: '#B71C1C', fontWeight: 'bold', fontSize: 16 }}>{tempStats.mediana.toFixed(2)}°C</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#FFE5E5' }]}> 
+              <Text style={{ fontSize: 18 }}>🎯</Text>
+              <Text style={{ color: '#B71C1C', fontSize: 13, marginTop: 2 }}>Moda</Text>
+              <Text style={{ color: '#B71C1C', fontWeight: 'bold', fontSize: 16 }}>{Array.isArray(tempStats.moda) ? tempStats.moda.join(', ') : tempStats.moda}°C</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#FFF3E5', marginTop: 8 }]}> 
+              <Text style={{ fontSize: 18 }}>↔️</Text>
+              <Text style={{ color: '#B26A00', fontSize: 13, marginTop: 2 }}>Assimetria</Text>
+              <Text style={{ color: '#B26A00', fontWeight: 'bold', fontSize: 16 }}>{tempStats.assimetria.toFixed(2)}</Text>
+            </View>
+          </View>
+          {/* Coluna 2 */}
+          <View style={{ flex: 1 }}>
+            <View style={[styles.statCard, { backgroundColor: '#E5F0FF' }]}> 
+              <Text style={{ fontSize: 18 }}>📈</Text>
+              <Text style={{ color: '#0D47A1', fontSize: 13, marginTop: 2 }}>Máximo</Text>
+              <Text style={{ color: '#0D47A1', fontWeight: 'bold', fontSize: 16 }}>{tempStats.max.toFixed(2)}°C</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#E5F0FF' }]}> 
+              <Text style={{ fontSize: 18 }}>📉</Text>
+              <Text style={{ color: '#0D47A1', fontSize: 13, marginTop: 2 }}>Mínimo</Text>
+              <Text style={{ color: '#0D47A1', fontWeight: 'bold', fontSize: 16 }}>{tempStats.min.toFixed(2)}°C</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#E5F0FF' }]}> 
+              <Text style={{ fontSize: 18 }}>📊</Text>
+              <Text style={{ color: '#0D47A1', fontSize: 13, marginTop: 2 }}>Desvio</Text>
+              <Text style={{ color: '#0D47A1', fontWeight: 'bold', fontSize: 16 }}>{tempStats.desvio.toFixed(2)}</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+      {/* Estatísticas Umidade */}
+      <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
         <Text style={[styles.section, { color: text }]}>Estatísticas Umidade</Text>
-        <Text style={{ color: text, fontSize: 13 }}>Média: {humStats.media.toFixed(2)} | Mediana: {humStats.mediana.toFixed(2)} | Moda: {humStats.moda} | Desvio: {humStats.desvio.toFixed(2)} | Assimetria: {humStats.assimetria.toFixed(2)}</Text>
-        <Text style={[styles.section, { color: text }]}>Indicadores Percentuais</Text>
-        <Text style={{ color: text, fontSize: 13 }}>{'% Temp > 20°C: '}{pctTemp20Fixed.toFixed(1)}{'%'}</Text>
-        <Text style={{ color: text, fontSize: 13 }}>{'% Umidade entre 50-65%: '}{pctHumInRangeFixed.toFixed(1)}{'%'}</Text>
-        <Text style={[styles.section, { color: text }]}>Probabilidade</Text>
-        <Text style={{ color: text, fontSize: 13 }}>
-          {normalTemp
-            ? 'Distribuição normal: '
-            : 'Amostra não normal: '}
-          {'P(T > 30°C): '}{probT30.toFixed(2)}
-        </Text>
-        <Text style={{ color: text, fontSize: 13, marginBottom: 8 }}>
-          {normalHum
-            ? 'Distribuição normal: '
-            : 'Amostra não normal: '}
-          {'P(H > 40%): '}{probH40.toFixed(2)}
-        </Text>
-        {/* Previsão Linear */}
-        <Text style={[styles.section, { color: text }]}>Previsão Linear</Text>
-        <Text style={{ color: text, fontSize: 13 }}>Modelo Temp: y = {tempRegression.m.toFixed(2)}x + {tempRegression.b.toFixed(2)}</Text>
-        <Text style={{ color: text, fontSize: 13 }}>Modelo Umidade: y = {humRegression.m.toFixed(2)}x + {humRegression.b.toFixed(2)}</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+          {/* Coluna 1 */}
+          <View style={{ flex: 1 }}>
+            <View style={[styles.statCard, { backgroundColor: '#E5F6FF' }]}> 
+              <Text style={{ fontSize: 18 }}>💧</Text>
+              <Text style={{ color: '#01579B', fontSize: 13, marginTop: 2 }}>Média</Text>
+              <Text style={{ color: '#01579B', fontWeight: 'bold', fontSize: 16 }}>{humStats.media.toFixed(2)}%</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#E5F6FF' }]}> 
+              <Text style={{ fontSize: 18 }}>🔀</Text>
+              <Text style={{ color: '#01579B', fontSize: 13, marginTop: 2 }}>Mediana</Text>
+              <Text style={{ color: '#01579B', fontWeight: 'bold', fontSize: 16 }}>{humStats.mediana.toFixed(2)}%</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#E5F6FF' }]}> 
+              <Text style={{ fontSize: 18 }}>🎯</Text>
+              <Text style={{ color: '#01579B', fontSize: 13, marginTop: 2 }}>Moda</Text>
+              <Text style={{ color: '#01579B', fontWeight: 'bold', fontSize: 16 }}>{humStats.moda}{typeof humStats.moda === 'number' ? '%' : ''}</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#E5FFF3', marginTop: 8 }]}> 
+              <Text style={{ fontSize: 18 }}>↔️</Text>
+              <Text style={{ color: '#00695C', fontSize: 13, marginTop: 2 }}>Assimetria</Text>
+              <Text style={{ color: '#00695C', fontWeight: 'bold', fontSize: 16 }}>{humStats.assimetria.toFixed(2)}</Text>
+            </View>
+          </View>
+          {/* Coluna 2 */}
+          <View style={{ flex: 1 }}>
+            <View style={[styles.statCard, { backgroundColor: '#FFF7E5' }]}> 
+              <Text style={{ fontSize: 18 }}>📈</Text>
+              <Text style={{ color: '#B26A00', fontSize: 13, marginTop: 2 }}>Máximo</Text>
+              <Text style={{ color: '#B26A00', fontWeight: 'bold', fontSize: 16 }}>{humStats.max.toFixed(2)}%</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#FFF7E5' }]}> 
+              <Text style={{ fontSize: 18 }}>📉</Text>
+              <Text style={{ color: '#B26A00', fontSize: 13, marginTop: 2 }}>Mínimo</Text>
+              <Text style={{ color: '#B26A00', fontWeight: 'bold', fontSize: 16 }}>{humStats.min.toFixed(2)}%</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#FFF7E5' }]}> 
+              <Text style={{ fontSize: 18 }}>📊</Text>
+              <Text style={{ color: '#B26A00', fontSize: 13, marginTop: 2 }}>Desvio</Text>
+              <Text style={{ color: '#B26A00', fontWeight: 'bold', fontSize: 16 }}>{humStats.desvio.toFixed(2)}</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+      {/* Probabilidades em cards lado a lado */}
+      <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
+        <Text style={[styles.section, { color: text }]}>Probabilidades</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+          <View style={{ flex: 1, backgroundColor: '#FFEBEE', borderRadius: 10, padding: 12, marginRight: 8, alignItems: 'center', elevation: 2, minWidth: 120 }}>
+            <Text style={{ fontSize: 22, color: '#FF5C5C', fontWeight: 'bold' }}>🔥</Text>
+            <Text style={{ color: '#B71C1C', fontSize: 13, marginTop: 2, marginBottom: 2, fontWeight: '600', textAlign: 'center' }}>Temp &gt; 20°C</Text>
+            <Text style={{ color: '#FF5C5C', fontSize: 24, fontWeight: 'bold' }}>{pctTemp20Fixed.toFixed(1)}%</Text>
+          </View>
+          <View style={{ flex: 1, backgroundColor: '#E3F2FD', borderRadius: 10, padding: 12, marginLeft: 8, alignItems: 'center', elevation: 2, minWidth: 120 }}>
+            <Text style={{ fontSize: 22, color: '#5C9EFF', fontWeight: 'bold' }}>💧</Text>
+            <Text style={{ color: '#0D47A1', fontSize: 13, marginTop: 2, marginBottom: 2, fontWeight: '600', textAlign: 'center' }}>Umidade 50-65%</Text>
+            <Text style={{ color: '#5C9EFF', fontSize: 24, fontWeight: 'bold' }}>{pctHumInRangeFixed.toFixed(1)}%</Text>
+          </View>
+        </View>
+      </View>
+      {/* Projeções */}
+      <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
+        <Text style={[styles.section, { color: text }]}>Projeções</Text>
+        {/* Equações de regressão em destaque, sem fundo branco */}
+        <View style={{ borderRadius: 8, padding: 12, marginBottom: 18, marginTop: 4, alignItems: 'center', elevation: 0 }}>
+          <Text style={{ color: text, fontSize: 15, fontWeight: 'bold', marginBottom: 6 }}>Equações de Regressão</Text>
+          <Text style={{ color: '#FF5C5C', fontSize: 14, fontWeight: '600', marginBottom: 2 }}>Temperatura:</Text>
+          <Text style={{ color: '#FF5C5C', fontSize: 14, marginBottom: 8 }}>y = {tempRegression.m.toFixed(2)}x + {tempRegression.b.toFixed(2)}</Text>
+          <Text style={{ color: '#5C9EFF', fontSize: 14, fontWeight: '600', marginBottom: 2 }}>Umidade:</Text>
+          <Text style={{ color: '#5C9EFF', fontSize: 14 }}>y = {humRegression.m.toFixed(2)}x + {humRegression.b.toFixed(2)}</Text>
+        </View>
         {/* Gráficos de barras para previsão dos próximos 5 valores */}
-        <Text style={[styles.section, { color: text, marginTop: 12 }]}>Próximos 5 valores previstos</Text>
-        <Text style={{ color: text, fontSize: 13, marginBottom: 2 }}>Temperatura</Text>
-        <View>
+        <Text style={[styles.section, { color: text, marginTop: 0, marginBottom: 8 }]}>Próximos 5 valores previstos</Text>
+        {/* Temperatura */}
+        <View style={{ marginBottom: 24 }}>
+          <Text style={{ color: text, fontSize: 13, marginBottom: 2, fontWeight: '600' }}>Temperatura</Text>
           {/* Valores previstos em cima das barras */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
             {tempForecast.map((val, idx) => (
@@ -397,8 +388,9 @@ const DashboardScreen = () => {
             ))}
           </View>
         </View>
-        <Text style={{ color: text, fontSize: 13, marginBottom: 2 }}>Umidade</Text>
+        {/* Umidade */}
         <View>
+          <Text style={{ color: text, fontSize: 13, marginBottom: 2, fontWeight: '600' }}>Umidade</Text>
           {/* Valores previstos em cima das barras */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
             {humForecast.map((val, idx) => (
@@ -418,19 +410,25 @@ const DashboardScreen = () => {
             ))}
           </View>
         </View>
-        {/* QQ-Plot Temperatura */}
-        <Text style={[styles.section, { color: text, marginTop: 16 }]}>QQ-Plot Temperatura</Text>
-        <View style={{ alignItems: 'center', marginBottom: 24 }}>
+      </View>
+      {/* QQ-Plot Temperatura */}
+      <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
+        <Text style={[styles.section, { color: text, marginTop: 0 }]}>QQ-Plot Temperatura</Text>
+        <View style={{ alignItems: 'center', marginBottom: 8 }}>
           <QQPlotSVG data={tempArr} width={260} height={200} color="#FF5C5C" />
         </View>
-        {/* QQ-Plot Umidade */}
-        <Text style={[styles.section, { color: text, marginTop: 16 }]}>QQ-Plot Umidade</Text>
-        <View style={{ alignItems: 'center', marginBottom: 24 }}>
+      </View>
+      {/* QQ-Plot Umidade */}
+      <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
+        <Text style={[styles.section, { color: text, marginTop: 0 }]}>QQ-Plot Umidade</Text>
+        <View style={{ alignItems: 'center', marginBottom: 8 }}>
           <QQPlotSVG data={humArr} width={260} height={200} color="#5C9EFF" />
         </View>
-        {/* Histogramas */}
-        <Text style={[styles.section, { color: text, marginTop: 16 }]}>Histograma Temperatura</Text>
-        <View style={{ alignItems: 'center', marginBottom: 16 }}>
+      </View>
+      {/* Histogramas */}
+      <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
+        <Text style={[styles.section, { color: text, marginTop: 0 }]}>Histograma Temperatura</Text>
+        <View style={{ alignItems: 'center', marginBottom: 8 }}>
           <BarChart
             style={{ height: 80, width: 260 }}
             data={tempHist}
@@ -439,8 +437,10 @@ const DashboardScreen = () => {
             contentInset={{ top: 10, bottom: 10 }}
           />
         </View>
-        <Text style={[styles.section, { color: text, marginTop: 8 }]}>Histograma Umidade</Text>
-        <View style={{ alignItems: 'center', marginBottom: 16 }}>
+      </View>
+      <View style={[styles.card, { backgroundColor: card, marginBottom: 24 }]}>  
+        <Text style={[styles.section, { color: text, marginTop: 0 }]}>Histograma Umidade</Text>
+        <View style={{ alignItems: 'center', marginBottom: 8 }}>
           <BarChart
             style={{ height: 80, width: 260 }}
             data={humHist}
@@ -476,6 +476,16 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  statCard: {
+    borderRadius: 8,
+    padding: 16,
+    elevation: 2,
+    marginBottom: 8,
+    alignItems: 'center',
+    flexDirection: 'column',
+    minHeight: 44,
+    width: '100%',
   },
 });
 
