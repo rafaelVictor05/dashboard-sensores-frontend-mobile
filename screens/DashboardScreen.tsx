@@ -7,6 +7,7 @@ import { LineChart, BarChart } from 'react-native-svg-charts';
 import * as ss from 'simple-statistics';
 import { mean, median, std, mode } from 'mathjs';
 import { Svg, Rect, Line as SvgLine } from 'react-native-svg'; 
+import { useRoute } from '@react-navigation/native';
 
 interface DataItem {
   humidity: string;
@@ -30,6 +31,17 @@ function getHistogram(arr: number[], bins = 8) {
     hist[idx]++;
   });
   return hist;
+}
+
+// Função para calcular o erro de Gauss (erf)
+function erf(x: number) {
+  // Abramowitz and Stegun formula 7.1.26
+  const sign = x >= 0 ? 1 : -1;
+  x = Math.abs(x);
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const t = 1 / (1 + p * x);
+  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  return sign * y;
 }
 
 // Componente QQ-Plot SVG
@@ -78,6 +90,9 @@ const QQPlotSVG = ({ data, width, height, color }: { data: number[], width: numb
 
 const DashboardScreen = () => {
   const { background, card, text, accent } = useTheme();
+  const route = useRoute();
+  // @ts-ignore
+  const location = route?.params?.location || 'Escritório';
   const [data, setData] = useState<DataItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -95,13 +110,13 @@ const DashboardScreen = () => {
   }
 
   // Filtrar e converter dados
-  const bedroomData = data.filter(d => d.location === 'Bedroom');
-  const tempArr = bedroomData.map(d => Number(d.temperature));
-  const humArr = bedroomData.map(d => Number(d.humidity));
-  const timeArr = bedroomData.map(d => moment.unix(d.timestamp_TTL).format('HH:mm'));
+  const filteredData = data.filter(d => d.location === location);
+  const tempArr = filteredData.map(d => Number(d.temperature));
+  const humArr = filteredData.map(d => Number(d.humidity));
+  const timeArr = filteredData.map(d => moment.unix(d.timestamp_TTL).format('HH:mm'));
 
   // Obter valores mais recentes
-  const latest = bedroomData.length ? bedroomData[bedroomData.length - 1] : null;
+  const latest = filteredData.length ? filteredData[filteredData.length - 1] : null;
   const latestTemp = latest ? Number(latest.temperature) : null;
   const latestHum = latest ? Number(latest.humidity) : null;
 
@@ -152,8 +167,8 @@ const DashboardScreen = () => {
 
   // Calcular intervalo de 10 minutos para previsões
   let futureTimes: string[] = [];
-  if (bedroomData.length > 0) {
-    const last = bedroomData[bedroomData.length - 1].timestamp_TTL;
+  if (filteredData.length > 0) {
+    const last = filteredData[filteredData.length - 1].timestamp_TTL;
     futureTimes = Array.from({ length: 5 }, (_, k) =>
       moment.unix(last + 600 * (k + 1)).format('HH:mm') // 600 segundos = 10 minutos
     );
@@ -163,9 +178,35 @@ const DashboardScreen = () => {
   const tempHist = getHistogram(tempArr);
   const humHist = getHistogram(humArr);
 
+  // --- Distribuição Normal: Teste de Shapiro-Wilk e cálculo de probabilidade ---
+  let tempNormalPct: string | number = 'Anormal';
+  if (tempArr.length > 3) {
+    try {
+      // Teste de normalidade: Shapiro-Wilk (implementação alternativa se não houver em ss)
+      // Função aproximada baseada em estatística de skewness e kurtosis
+      function isNormal(arr: number[]): boolean {
+        const n = arr.length;
+        if (n < 4) return false;
+        const skew = ss.sampleSkewness(arr);
+        const kurt = ss.sampleKurtosis ? ss.sampleKurtosis(arr) : 0;
+        // Limiares típicos para normalidade
+        return Math.abs(skew) < 1 && Math.abs(kurt) < 2;
+      }
+      if (isNormal(tempArr)) {
+        const mu = mean(tempArr) as number;
+        const sigma = (std(tempArr) as unknown) as number;
+        const z = (25 - mu) / (sigma || 1e-8);
+        const cdf = 0.5 * (1 + erf(z / Math.SQRT2));
+        tempNormalPct = ((1 - cdf) * 100).toFixed(1) + '%';
+      }
+    } catch {
+      tempNormalPct = 'Anormal';
+    }
+  }
+
   return (
     <ScrollView style={{ backgroundColor: background }} contentContainerStyle={{ padding: 16 }}>
-      <Text style={[styles.title, { color: text }]}>Dashboard - Bedroom</Text>
+      <Text style={[styles.title, { color: text }]}>Dashboard - {location}</Text>
       {/* Cards de valores mais recentes */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 }}>
         <View style={[styles.card, { backgroundColor: card, flex: 1, marginRight: 8, alignItems: 'center' }]}>  
@@ -337,19 +378,14 @@ const DashboardScreen = () => {
           </View>
         </View>
       </View>
-      {/* Probabilidades em cards lado a lado */}
+      {/* Probabilidades (Distribuição Normal) */}
       <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
         <Text style={[styles.section, { color: text }]}>Probabilidades</Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-          <View style={{ flex: 1, backgroundColor: '#FFEBEE', borderRadius: 10, padding: 12, marginRight: 8, alignItems: 'center', elevation: 2, minWidth: 120 }}>
-            <Text style={{ fontSize: 22, color: '#FF5C5C', fontWeight: 'bold' }}>🔥</Text>
-            <Text style={{ color: '#B71C1C', fontSize: 13, marginTop: 2, marginBottom: 2, fontWeight: '600', textAlign: 'center' }}>Temp &gt; 20°C</Text>
-            <Text style={{ color: '#FF5C5C', fontSize: 24, fontWeight: 'bold' }}>{pctTemp20Fixed.toFixed(1)}%</Text>
-          </View>
-          <View style={{ flex: 1, backgroundColor: '#E3F2FD', borderRadius: 10, padding: 12, marginLeft: 8, alignItems: 'center', elevation: 2, minWidth: 120 }}>
-            <Text style={{ fontSize: 22, color: '#5C9EFF', fontWeight: 'bold' }}>💧</Text>
-            <Text style={{ color: '#0D47A1', fontSize: 13, marginTop: 2, marginBottom: 2, fontWeight: '600', textAlign: 'center' }}>Umidade 50-65%</Text>
-            <Text style={{ color: '#5C9EFF', fontSize: 24, fontWeight: 'bold' }}>{pctHumInRangeFixed.toFixed(1)}%</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 8 }}>
+          <View style={{ flex: 1, backgroundColor: '#FFF3E5', borderRadius: 10, padding: 16, alignItems: 'center', elevation: 2, minWidth: 120 }}>
+            <Text style={{ fontSize: 22, color: '#FF9800', fontWeight: 'bold' }}>🌡️</Text>
+            <Text style={{ color: '#B26A00', fontSize: 13, marginTop: 2, marginBottom: 2, fontWeight: '600', textAlign: 'center' }}>Temp &gt; 25°C</Text>
+            <Text style={{ color: '#FF9800', fontSize: 24, fontWeight: 'bold' }}>{tempNormalPct}</Text>
           </View>
         </View>
       </View>
