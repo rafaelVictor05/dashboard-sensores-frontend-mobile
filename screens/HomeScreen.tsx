@@ -30,7 +30,7 @@ const HomeScreen = () => {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: background }} contentContainerStyle={{ alignItems: 'center', padding: 24 }}>
-      <Text style={[styles.title, { color: text }]}>Bem-vindo ao Smart Home</Text>
+      <Text style={[styles.title, { color: text }]}>Bem-vindo!</Text>
       <Text style={[styles.subtitle, { color: text }]}>Selecione um ambiente para visualizar os dados</Text>
       {locations.map(loc => (
         <TouchableOpacity

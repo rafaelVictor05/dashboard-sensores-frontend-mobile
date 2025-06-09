@@ -8,6 +8,7 @@ import * as ss from 'simple-statistics';
 import { mean, median, std, mode } from 'mathjs';
 import { Svg, Rect, Line as SvgLine } from 'react-native-svg'; 
 import { useRoute } from '@react-navigation/native';
+import { shapiroWilk } from '../utils/testeShapiroWilk';
 
 interface DataItem {
   humidity: string;
@@ -127,6 +128,7 @@ const DashboardScreen = () => {
     moda: tempArr.length ? (mode(tempArr) as number[]) : [],
     desvio: tempArr.length ? (std(tempArr) as unknown as number) : 0,
     assimetria: tempArr.length > 2 ? (ss.sampleSkewness(tempArr) as number) : 0,
+    curtose: tempArr.length > 2 && ss.sampleKurtosis ? (ss.sampleKurtosis(tempArr) as number) : 0,
     min: tempArr.length ? Math.min(...tempArr) : 0,
     max: tempArr.length ? Math.max(...tempArr) : 0,
   };
@@ -137,21 +139,10 @@ const DashboardScreen = () => {
     moda: humArr.length ? mode(humArr) : 0,
     desvio: tempArr.length ? (std(humArr) as unknown as number) : 0,
     assimetria: humArr.length > 2 ? ss.sampleSkewness(humArr) : 0,
+    curtose: humArr.length > 2 && ss.sampleKurtosis ? ss.sampleKurtosis(humArr) : 0,
     min: humArr.length ? Math.min(...humArr) : 0,
     max: humArr.length ? Math.max(...humArr) : 0,
   };
-
-  // Percentuais
-  let pctTemp20Fixed = 0;
-  let pctHumInRangeFixed = 0;
-  if (tempArr.length > 0) {
-    const count = tempArr.reduce((acc, t) => acc + (t > 20 ? 1 : 0), 0);
-    pctTemp20Fixed = (count / tempArr.length) * 100;
-  }
-  if (humArr.length > 0) {
-    const count = humArr.reduce((acc, h) => acc + (h >= 50 && h <= 65 ? 1 : 0), 0);
-    pctHumInRangeFixed = (count / humArr.length) * 100;
-  }
 
   // Regressão Linear
   const tempRegression = tempArr.length > 1 ? ss.linearRegression(tempArr.map((y, i) => [i, y])) : { m: 0, b: 0 };
@@ -177,32 +168,21 @@ const DashboardScreen = () => {
   // Histogramas e Boxplots
   const tempHist = getHistogram(tempArr);
   const humHist = getHistogram(humArr);
+console.log("temp: ", tempArr);
+// --- Distribuição Normal: Teste de Shapiro-Wilk e cálculo de probabilidade ---
+let tempNormalPct: string | number = 'Anormal';
+const resultado = shapiroWilk(tempArr);
+const alpha = 0.05;
 
-  // --- Distribuição Normal: Teste de Shapiro-Wilk e cálculo de probabilidade ---
-  let tempNormalPct: string | number = 'Anormal';
-  if (tempArr.length > 3) {
-    try {
-      // Teste de normalidade: Shapiro-Wilk (implementação alternativa se não houver em ss)
-      // Função aproximada baseada em estatística de skewness e kurtosis
-      function isNormal(arr: number[]): boolean {
-        const n = arr.length;
-        if (n < 4) return false;
-        const skew = ss.sampleSkewness(arr);
-        const kurt = ss.sampleKurtosis ? ss.sampleKurtosis(arr) : 0;
-        // Limiares típicos para normalidade
-        return Math.abs(skew) < 1 && Math.abs(kurt) < 2;
-      }
-      if (isNormal(tempArr)) {
+if (resultado.pValue > alpha) {
         const mu = mean(tempArr) as number;
         const sigma = (std(tempArr) as unknown) as number;
         const z = (25 - mu) / (sigma || 1e-8);
         const cdf = 0.5 * (1 + erf(z / Math.SQRT2));
         tempNormalPct = ((1 - cdf) * 100).toFixed(1) + '%';
       }
-    } catch {
-      tempNormalPct = 'Anormal';
-    }
-  }
+const countEmp = tempArr.reduce((acc, t) => acc + (t > 25 ? 1 : 0), 0);
+let tempEmpiricalPct = ((countEmp / tempArr.length) * 100).toFixed(1) + '%';
 
   return (
     <ScrollView style={{ backgroundColor: background }} contentContainerStyle={{ padding: 16 }}>
@@ -328,6 +308,11 @@ const DashboardScreen = () => {
               <Text style={{ color: '#0D47A1', fontSize: 13, marginTop: 2 }}>Desvio</Text>
               <Text style={{ color: '#0D47A1', fontWeight: 'bold', fontSize: 16 }}>{tempStats.desvio.toFixed(2)}</Text>
             </View>
+            <View style={[styles.statCard, { backgroundColor: '#FFF3E5', marginTop: 8 }]}> 
+              <Text style={{ fontSize: 18 }}>📐</Text>
+              <Text style={{ color: '#B26A00', fontSize: 13, marginTop: 2 }}>Curtose</Text>
+              <Text style={{ color: '#B26A00', fontWeight: 'bold', fontSize: 16 }}>{tempStats.curtose.toFixed(2)}</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -350,7 +335,9 @@ const DashboardScreen = () => {
             <View style={[styles.statCard, { backgroundColor: '#E5F6FF' }]}> 
               <Text style={{ fontSize: 18 }}>🎯</Text>
               <Text style={{ color: '#01579B', fontSize: 13, marginTop: 2 }}>Moda</Text>
-              <Text style={{ color: '#01579B', fontWeight: 'bold', fontSize: 16 }}>{humStats.moda}{typeof humStats.moda === 'number' ? '%' : ''}</Text>
+              <Text style={{ color: '#01579B', fontWeight: 'bold', fontSize: 16 }}>
+                {Array.isArray(humStats.moda) ? humStats.moda.join(', ') : humStats.moda}{humStats.moda ? '%' : ''}
+              </Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: '#E5FFF3', marginTop: 8 }]}> 
               <Text style={{ fontSize: 18 }}>↔️</Text>
@@ -375,17 +362,38 @@ const DashboardScreen = () => {
               <Text style={{ color: '#B26A00', fontSize: 13, marginTop: 2 }}>Desvio</Text>
               <Text style={{ color: '#B26A00', fontWeight: 'bold', fontSize: 16 }}>{humStats.desvio.toFixed(2)}</Text>
             </View>
+            <View style={[styles.statCard, { backgroundColor: '#E5FFF3', marginTop: 8 }]}> 
+              <Text style={{ fontSize: 18 }}>📐</Text>
+              <Text style={{ color: '#00695C', fontSize: 13, marginTop: 2 }}>Curtose</Text>
+              <Text style={{ color: '#00695C', fontWeight: 'bold', fontSize: 16 }}>{humStats.curtose.toFixed(2)}</Text>
+            </View>
           </View>
         </View>
       </View>
-      {/* Probabilidades (Distribuição Normal) */}
+      {/* Probabilidades (Distribuição Normal e Empírica) */}
       <View style={[styles.card, { backgroundColor: card, marginBottom: 16 }]}>  
         <Text style={[styles.section, { color: text }]}>Probabilidades</Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 8 }}>
-          <View style={{ flex: 1, backgroundColor: '#FFF3E5', borderRadius: 10, padding: 16, alignItems: 'center', elevation: 2, minWidth: 120 }}>
-            <Text style={{ fontSize: 22, color: '#FF9800', fontWeight: 'bold' }}>🌡️</Text>
-            <Text style={{ color: '#B26A00', fontSize: 13, marginTop: 2, marginBottom: 2, fontWeight: '600', textAlign: 'center' }}>Temp &gt; 25°C</Text>
-            <Text style={{ color: '#FF9800', fontSize: 24, fontWeight: 'bold' }}>{tempNormalPct}</Text>
+        {/* Distribuição Normal */}
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ color: text, fontWeight: 'bold', fontSize: 15, marginBottom: 6 }}>Distribuição Normal</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 8 }}>
+            <View style={{ backgroundColor: '#FFF3E5', borderRadius: 10, padding: 16, alignItems: 'center', elevation: 2, minWidth: 120 }}>
+              <Text style={{ fontSize: 22, color: '#FF9800', fontWeight: 'bold' }}>🌡️</Text>
+              <Text style={{ color: '#B26A00', fontSize: 13, marginTop: 2, marginBottom: 2, fontWeight: '600', textAlign: 'center' }}>Temp &gt; 25°C</Text>
+              <Text style={{ color: '#FF9800', fontSize: 24, fontWeight: 'bold' }}>{resultado && resultado.pValue > alpha ? tempNormalPct : 'Anormal'}</Text>
+              <Text style={{ color: '#888', fontSize: 12, marginTop: 6 }}>p-value: {resultado.pValue.toFixed(5)}</Text>
+            </View>
+          </View>
+        </View>
+        {/* Empírica */}
+        <View>
+          <Text style={{ color: text, fontWeight: 'bold', fontSize: 15, marginBottom: 6 }}>Empírica</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 8 }}>
+            <View style={{ backgroundColor: '#E5F6FF', borderRadius: 10, padding: 16, alignItems: 'center', elevation: 2, minWidth: 120 }}>
+              <Text style={{ fontSize: 22, color: '#2196F3', fontWeight: 'bold' }}>🌡️</Text>
+              <Text style={{ color: '#01579B', fontSize: 13, marginTop: 2, marginBottom: 2, fontWeight: '600', textAlign: 'center' }}>Temp &gt; 25°C</Text>
+              <Text style={{ color: '#2196F3', fontSize: 24, fontWeight: 'bold' }}>{tempEmpiricalPct}</Text>
+            </View>
           </View>
         </View>
       </View>
