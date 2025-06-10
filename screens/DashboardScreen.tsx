@@ -189,8 +189,7 @@ const DashboardScreen = () => {
 // --- Distribuição Normal: Teste de Shapiro-Wilk e cálculo de probabilidade ---
 let tempNormalPct: string | number = 'Anormal';
 const resultado = shapiroWilk(tempArr);
-const resultadohum = shapiroWilk(humArr);
-console.log("hum: ", resultadohum)
+
 const alpha = 0.05;
 
 if (resultado.pValue > alpha) {
