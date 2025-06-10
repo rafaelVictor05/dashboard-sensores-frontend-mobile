@@ -2,7 +2,7 @@
 
 Este repositório contém o código do **frontend mobile** do projeto. O aplicativo é desenvolvido em React Native e se conecta a uma API de backend para exibir e analisar dados de temperatura e umidade.
 
-<img src="prints/homepage.png" alt="Print da Homepage" width="400"/> | <img src="prints/dashboard1.png" alt="Print do Dashboard" width="400"/>
+<img src="prints/homepage.png" alt="Print da Homepage" width="200"/> | <img src="prints/dashboard1.png" alt="Print do Dashboard" width="200"/>
 
 ## Funcionalidades Implementadas
 
