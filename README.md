@@ -7,7 +7,7 @@ Este repositório contém o código do **frontend mobile** do projeto. O aplicat
 -   **Autenticação de Usuário:** Telas de Login e Cadastro para gerenciamento de acesso.
 -   **Dashboard:** Visualização de dados formatados.
 -   **Análise Estatística:**
-    -   Cálculo de Média, Mediana, Moda, Desvio Padrão e Assimetria.
+    -   Cálculo de Média, Mediana, Moda, Máximo, Mínimo, Desvio Padrão, Assimetria e Curtose.
     -   Análise de percentuais (ex: % do tempo acima de 30°C, % de umidade fora do ideal).
     -   Cálculo de probabilidades.
     -   Previsão de dados futuros utilizando Regressão Linear.
