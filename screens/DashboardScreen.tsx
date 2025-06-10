@@ -149,12 +149,29 @@ const DashboardScreen = () => {
   const humRegression = humArr.length > 1 ? ss.linearRegression(humArr.map((y, i) => [i, y])) : { m: 0, b: 0 };
 
   // Previsão dos próximos 5 valores
-  const tempForecast = tempArr.length > 1
+  const tempForecastRaw = tempArr.length > 1
     ? Array.from({ length: 5 }, (_, k) => tempRegression.m * (tempArr.length + k) + tempRegression.b)
     : [];
-  const humForecast = humArr.length > 1
+  const humForecastRaw = humArr.length > 1
     ? Array.from({ length: 5 }, (_, k) => humRegression.m * (humArr.length + k) + humRegression.b)
     : [];
+  // Arredondar para 1 casa decimal para exibição e gráfico
+  const tempForecast = tempForecastRaw.map(v => Number(v.toFixed(1)));
+  const humForecast = humForecastRaw.map(v => Number(v.toFixed(1)));
+  // yMin/yMax explícitos para garantir escala correta
+  let tempForecastMin = Math.min(...tempForecast);
+  let tempForecastMax = Math.max(...tempForecast);
+  let humForecastMin = Math.min(...humForecast);
+  let humForecastMax = Math.max(...humForecast);
+  // Corrigir caso todos os valores previstos sejam iguais (faixa mínima para o gráfico)
+  if (tempForecastMin === tempForecastMax) {
+    tempForecastMin -= 0.5;
+    tempForecastMax += 0.5;
+  }
+  if (humForecastMin === humForecastMax) {
+    humForecastMin -= 0.5;
+    humForecastMax += 0.5;
+  }
 
   // Calcular intervalo de 10 minutos para previsões
   let futureTimes: string[] = [];
@@ -168,10 +185,12 @@ const DashboardScreen = () => {
   // Histogramas e Boxplots
   const tempHist = getHistogram(tempArr);
   const humHist = getHistogram(humArr);
-console.log("temp: ", tempArr);
+
 // --- Distribuição Normal: Teste de Shapiro-Wilk e cálculo de probabilidade ---
 let tempNormalPct: string | number = 'Anormal';
 const resultado = shapiroWilk(tempArr);
+const resultadohum = shapiroWilk(humArr);
+console.log("hum: ", resultadohum)
 const alpha = 0.05;
 
 if (resultado.pValue > alpha) {
@@ -425,6 +444,8 @@ let tempEmpiricalPct = ((countEmp / tempArr.length) * 100).toFixed(1) + '%';
             svg={{ fill: '#FF5C5C' }}
             spacingInner={0.2}
             contentInset={{ top: 10, bottom: 10 }}
+            yMin={tempForecastMin}
+            yMax={tempForecastMax}
           />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
             {futureTimes.map((t, idx) => (
@@ -447,6 +468,8 @@ let tempEmpiricalPct = ((countEmp / tempArr.length) * 100).toFixed(1) + '%';
             svg={{ fill: '#5C9EFF' }}
             spacingInner={0.2}
             contentInset={{ top: 10, bottom: 10 }}
+            yMin={humForecastMin}
+            yMax={humForecastMax}
           />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
             {futureTimes.map((t, idx) => (

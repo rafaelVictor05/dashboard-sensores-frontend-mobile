@@ -86,10 +86,10 @@ const HomeScreen = () => {
 
 // Função para retornar um ícone genérico por localização
 function getLocationIcon(loc: string) {
-  if (/bedroom/i.test(loc)) return 'https://img.icons8.com/ios-filled/100/bedroom.png';
-  if (/living/i.test(loc)) return 'https://img.icons8.com/ios-filled/100/living-room.png';
-  if (/kitchen/i.test(loc)) return 'https://img.icons8.com/ios-filled/100/kitchen-room.png';
-  if (/bath/i.test(loc)) return 'https://img.icons8.com/ios-filled/100/bath.png';
+  if (/bedroom|quarto/i.test(loc)) return 'https://img.icons8.com/ios-filled/100/bedroom.png';
+  if (/living|sala/i.test(loc)) return 'https://img.icons8.com/ios-filled/100/living-room.png';
+  if (/kitchen|cozinha/i.test(loc)) return 'https://img.icons8.com/ios-filled/100/kitchen-room.png';
+  if (/bath|banheiro/i.test(loc)) return 'https://img.icons8.com/ios-filled/100/bath.png';
   if (/office|escritorio/i.test(loc)) return 'https://img.icons8.com/ios-filled/100/office.png';
   return 'https://img.icons8.com/ios-filled/100/room.png';
 }
